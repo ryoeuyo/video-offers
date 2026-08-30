@@ -13,8 +13,16 @@ type Config struct {
 	LogLevel        string        `env:"LOG_LEVEL" envDefault:"info"`
 	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"10s"`
 
-	DB   DB
-	Auth Auth
+	DB        DB
+	Auth      Auth
+	RateLimit RateLimit
+}
+
+type RateLimit struct {
+	AuthMax        int           `env:"RATE_LIMIT_AUTH_MAX" envDefault:"30"`
+	AuthWindow     time.Duration `env:"RATE_LIMIT_AUTH_WINDOW" envDefault:"1m"`
+	OfferCreateMax int           `env:"RATE_LIMIT_OFFER_MAX" envDefault:"10"`
+	OfferWindow    time.Duration `env:"RATE_LIMIT_OFFER_WINDOW" envDefault:"1m"`
 }
 
 type DB struct {

@@ -64,7 +64,10 @@ func (s *Server) routes(deps Deps) {
 	requireAuth := RequireAuth(deps.JWT)
 	requireStreamer := RequireStreamer()
 
-	auth := v1.Group("/auth")
+	authRL := authRateLimit(s.cfg.RateLimit)
+	offerRL := offerCreateRateLimit(s.cfg.RateLimit)
+
+	auth := v1.Group("/auth", authRL)
 	auth.Post("/register", authH.Register)
 	auth.Post("/login", authH.Login)
 	auth.Post("/refresh", authH.Refresh)
@@ -73,7 +76,7 @@ func (s *Server) routes(deps Deps) {
 	streamers := v1.Group("/streamers")
 	streamers.Get("/", streamerH.List)
 	streamers.Get("/:username", streamerH.GetByUsername)
-	streamers.Post("/:username/offers", requireAuth, offerH.Create)
+	streamers.Post("/:username/offers", requireAuth, offerRL, offerH.Create)
 
 	me := v1.Group("/me", requireAuth)
 	me.Get("/", authH.Me)
