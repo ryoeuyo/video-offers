@@ -39,7 +39,8 @@
   color: var(--text-muted);
 }
 
-.form input[type='text'] {
+.form input[type='text'],
+.form input[type='number'] {
   padding: 0.65rem 0.75rem;
   border-radius: 0.5rem;
   border: 1px solid var(--border);

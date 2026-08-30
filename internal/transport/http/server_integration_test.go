@@ -65,7 +65,7 @@ func newTestServer(t *testing.T) *httpapi.Server {
 	authSvc := service.NewAuthService(userRepo, refreshRepo, jwtSvc, cfg.Auth.RefreshTTL)
 	userSvc := service.NewUserService(userRepo, settingsRepo, nil)
 	offerRepo := repo.NewOfferRepo(pool)
-	offerSvc := service.NewOfferService(offerRepo, userRepo, settingsRepo, stubVideoResolver{})
+	offerSvc := service.NewOfferService(offerRepo, userRepo, settingsRepo, stubVideoResolver{}, nil)
 
 	return httpapi.NewServer(cfg, log, httpapi.Deps{
 		Pool:   pool,

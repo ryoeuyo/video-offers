@@ -127,6 +127,44 @@ func (c *OAuthClient) ExchangeCode(ctx context.Context, code, codeVerifier strin
 	return out, nil
 }
 
+func (c *OAuthClient) ClientID() string { return c.clientID }
+
+func (c *OAuthClient) HTTP() HTTPClient { return c.client }
+
+func (c *OAuthClient) Refresh(ctx context.Context, refreshToken string) (TokenResponse, error) {
+	form := url.Values{}
+	form.Set("client_id", c.clientID)
+	form.Set("client_secret", c.clientSecret)
+	form.Set("grant_type", "refresh_token")
+	form.Set("refresh_token", refreshToken)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.tokenURL, strings.NewReader(form.Encode()))
+	if err != nil {
+		return TokenResponse{}, err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return TokenResponse{}, fmt.Errorf("refresh request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return TokenResponse{}, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return TokenResponse{}, fmt.Errorf("refresh status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var out TokenResponse
+	if err := json.Unmarshal(body, &out); err != nil {
+		return TokenResponse{}, fmt.Errorf("decode refresh: %w", err)
+	}
+	return out, nil
+}
+
 func (c *OAuthClient) GetCurrentUser(ctx context.Context, accessToken string) (UserResponse, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.apiURL, nil)
 	if err != nil {

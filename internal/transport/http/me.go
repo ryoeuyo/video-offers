@@ -69,7 +69,12 @@ func (h *MeHandlers) UpdateSettings(c *fiber.Ctx) error {
 	}
 
 	settings, err := h.users.UpdateSettings(c.UserContext(), userID, service.UpdateSettingsInput{
-		AcceptingOffers: req.AcceptingOffers,
+		AcceptingOffers:      req.AcceptingOffers,
+		MinAccountAgeSeconds: req.MinAccountAgeSeconds,
+		RequireTwitchSender:  req.RequireTwitchSender,
+		RequireFollow:        req.RequireFollow,
+		MinFollowAgeSeconds:  req.MinFollowAgeSeconds,
+		RequireSubscription:  req.RequireSubscription,
 	})
 	if err != nil {
 		return err

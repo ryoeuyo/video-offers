@@ -12,9 +12,9 @@ import (
 
 	"github.com/ruslan/video-offers/internal/domain"
 	"github.com/ruslan/video-offers/internal/pkg/pagination"
+	pkguuid "github.com/ruslan/video-offers/internal/pkg/uuid"
 	"github.com/ruslan/video-offers/internal/repo"
 	"github.com/ruslan/video-offers/internal/service/video"
-	pkguuid "github.com/ruslan/video-offers/internal/pkg/uuid"
 )
 
 type OfferRepository interface {
@@ -30,10 +30,15 @@ type OfferRepository interface {
 
 type OfferStreamerLookup interface {
 	GetByUsername(ctx context.Context, username string) (domain.User, error)
+	GetByID(ctx context.Context, id uuid.UUID) (domain.User, error)
 }
 
 type OfferSettingsLookup interface {
 	GetByUserID(ctx context.Context, userID uuid.UUID) (domain.StreamerSettings, error)
+}
+
+type OfferTwitchGate interface {
+	CheckOfferGates(ctx context.Context, streamerID, senderID uuid.UUID, settings domain.StreamerSettings) error
 }
 
 type CreateOfferInput struct {
@@ -42,10 +47,11 @@ type CreateOfferInput struct {
 }
 
 type OfferService struct {
-	offers   OfferRepository
+	offers    OfferRepository
 	streamers OfferStreamerLookup
-	settings OfferSettingsLookup
-	resolver video.Resolver
+	settings  OfferSettingsLookup
+	resolver  video.Resolver
+	gates     OfferTwitchGate
 }
 
 func NewOfferService(
@@ -53,12 +59,14 @@ func NewOfferService(
 	streamers OfferStreamerLookup,
 	settings OfferSettingsLookup,
 	resolver video.Resolver,
+	gates OfferTwitchGate,
 ) *OfferService {
 	return &OfferService{
 		offers:    offers,
 		streamers: streamers,
 		settings:  settings,
 		resolver:  resolver,
+		gates:     gates,
 	}
 }
 
@@ -85,6 +93,10 @@ func (s *OfferService) Create(
 	}
 	if !settings.AcceptingOffers {
 		return domain.Offer{}, domain.ErrConflict.WithCode("offers_disabled", "стример не принимает офферы")
+	}
+
+	if err := s.enforceSenderRules(ctx, streamer.ID, senderID, settings); err != nil {
+		return domain.Offer{}, err
 	}
 
 	comment := strings.TrimSpace(in.Comment)
@@ -137,6 +149,33 @@ func (s *OfferService) Create(
 		return domain.Offer{}, err
 	}
 	return offer, nil
+}
+
+func (s *OfferService) enforceSenderRules(
+	ctx context.Context,
+	streamerID, senderID uuid.UUID,
+	settings domain.StreamerSettings,
+) error {
+	if settings.MinAccountAge > 0 {
+		sender, err := s.streamers.GetByID(ctx, senderID)
+		if err != nil {
+			return fmt.Errorf("get sender: %w", err)
+		}
+		if time.Since(sender.CreatedAt) < settings.MinAccountAge {
+			return domain.ErrForbidden.WithCode("account_too_new", "аккаунт слишком новый для этой предложки")
+		}
+	}
+
+	if !settings.TwitchGatesEnabled() {
+		return nil
+	}
+	if s.gates == nil {
+		return domain.ErrUnavailable.WithCode("twitch_unavailable", "Twitch временно недоступен")
+	}
+	if err := s.gates.CheckOfferGates(ctx, streamerID, senderID, settings); err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *OfferService) enrichOffersMeta(ctx context.Context, offers []domain.Offer) []domain.Offer {

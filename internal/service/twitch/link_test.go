@@ -45,6 +45,14 @@ func (f *fakeLinkRepo) ExistsByUserID(_ context.Context, userID uuid.UUID) (bool
 	return ok, nil
 }
 
+func (f *fakeLinkRepo) GetRecordByUserID(_ context.Context, userID uuid.UUID) (domain.TwitchLinkRecord, error) {
+	rec, ok := f.byUser[userID]
+	if !ok {
+		return domain.TwitchLinkRecord{}, domain.ErrNotFound
+	}
+	return rec, nil
+}
+
 func (f *fakeLinkRepo) DeleteByUserID(_ context.Context, userID uuid.UUID) error {
 	if _, ok := f.byUser[userID]; !ok {
 		return domain.ErrNotFound

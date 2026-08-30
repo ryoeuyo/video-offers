@@ -34,12 +34,29 @@ func (u *User) IsStreamer() bool { return u.Role == RoleStreamer }
 // StreamerSettings существуют только у пользователей с ролью streamer,
 // создаются в момент переключения роли.
 type StreamerSettings struct {
-	UserID          uuid.UUID
-	AcceptingOffers bool
-	AllowAnonymous  bool
-	MinAccountAge   time.Duration
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	UserID              uuid.UUID
+	AcceptingOffers     bool
+	AllowAnonymous      bool
+	MinAccountAge       time.Duration
+	RequireTwitchSender bool
+	RequireFollow       bool
+	MinFollowAge        time.Duration
+	RequireSubscription bool
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+func (s StreamerSettings) TwitchGatesEnabled() bool {
+	return s.RequireTwitchSender || s.RequireFollow || s.RequireSubscription || s.MinFollowAge > 0
+}
+
+func (s *StreamerSettings) ApplyGateInvariants() {
+	if s.MinFollowAge > 0 {
+		s.RequireFollow = true
+	}
+	if s.RequireFollow || s.RequireSubscription || s.MinFollowAge > 0 {
+		s.RequireTwitchSender = true
+	}
 }
 
 // RefreshToken хранится только хэшем: утечка таблицы не даёт войти под пользователем.

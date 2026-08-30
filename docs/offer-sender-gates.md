@@ -1,6 +1,6 @@
 # Задача: кто может кидать предложки
 
-**Статус:** backlog  
+**Статус:** done  
 **Приоритет:** высокий  
 **Зависит от:** MVP create offer, [привязка Twitch](./twitch-linking.md) (фазы A/B готовы)  
 **Связано:** `streamer_settings`, `PATCH /me/settings`, `POST /streamers/:username/offers`
@@ -159,28 +159,28 @@ UI может принимать возраст follow в **днях**, API хр
 
 ### Фаза 1 — Модель и PATCH (1–2 дня)
 
-- [ ] Поля Twitch-gate в `domain.StreamerSettings`
-- [ ] `repo/streamer_settings.go` — SELECT/INSERT/UPDATE всех колонок
-- [ ] `UpdateSettingsInput` + валидация инвариантов
-- [ ] DTO GET/PATCH, `offer_rules` на публичном профиле
-- [ ] Unit-тесты: implicit flags, `twitch_required`, `twitch_scope_required`
+- [x] Поля Twitch-gate в `domain.StreamerSettings`
+- [x] `repo/streamer_settings.go` — SELECT/INSERT/UPDATE всех колонок
+- [x] `UpdateSettingsInput` + валидация инвариантов
+- [x] DTO GET/PATCH, `offer_rules` на публичном профиле
+- [x] Unit-тесты: implicit flags, `twitch_required`, `twitch_scope_required`
 
 **Критерий:** стример сохраняет правила, `GET /me/settings` и публичный профиль их возвращают. Create ещё не фильтрует.
 
 ### Фаза 2 — Возраст аккаунта OfferBox (0.5 дня)
 
-- [ ] `OfferService.Create` проверяет `users.created_at`
-- [ ] Тесты: молодой аккаунт 403, старый 201
-- [ ] UI поле в настройках + текст ошибки на странице оффера
+- [x] `OfferService.Create` проверяет `users.created_at`
+- [x] Тесты: молодой аккаунт 403, старый 201
+- [x] UI поле в настройках + текст ошибки на странице оффера
 
 **Критерий:** порог работает без Twitch API.
 
 ### Фаза 3 — Twitch gates (см. фазы C/D в twitch-linking.md)
 
-- [ ] `TwitchClient`: `IsFollower`, `FollowedAt`, `IsSubscriber` + кеш
-- [ ] Enforcement в `Create`
-- [ ] UI чекбоксы + дни follow + sub
-- [ ] Сообщения на странице оффера
+- [x] `TwitchClient`: `IsFollower`, `FollowedAt`, `IsSubscriber` + кеш
+- [x] Enforcement в `Create`
+- [x] UI чекбоксы + дни follow + sub
+- [x] Сообщения на странице оффера
 
 **Критерий:** non-follower / свежий follow / non-sub получают 403; подходящий зритель — 201.
 
@@ -208,8 +208,8 @@ UI может принимать возраст follow в **днях**, API хр
 
 ## Definition of Done
 
-- [ ] Стример сохраняет набор правил через `/me/settings`.
-- [ ] Create offer отклоняет отправителя по правилам с стабильными `code`.
-- [ ] Публичный профиль и страница оффера показывают условия.
-- [ ] Twitch-gate нельзя включить без привязки стримера.
-- [ ] `make test` зелёный; примеры в [api-examples.md](./api-examples.md) дополнены.
+- [x] Стример сохраняет набор правил через `/me/settings`.
+- [x] Create offer отклоняет отправителя по правилам с стабильными `code`.
+- [x] Публичный профиль и страница оффера показывают условия.
+- [x] Twitch-gate нельзя включить без привязки стримера.
+- [x] `make test` зелёный; примеры в [api-examples.md](./api-examples.md) дополнены.

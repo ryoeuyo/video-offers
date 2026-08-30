@@ -6,6 +6,8 @@ import (
 	"github.com/google/uuid"
 )
 
+const TwitchScopeChannelSubscriptions = "channel:read:subscriptions"
+
 // TwitchLink — привязка OfferBox-пользователя к Twitch (без секретов).
 type TwitchLink struct {
 	UserID            uuid.UUID

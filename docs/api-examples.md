@@ -79,8 +79,10 @@ curl -s localhost:8080/api/v1/me/settings \
 curl -s -X PATCH localhost:8080/api/v1/me/settings \
   -H "Authorization: Bearer <access_token>" \
   -H 'Content-Type: application/json' \
-  -d '{"accepting_offers":false}'
+  -d '{"accepting_offers":true,"require_follow":true,"min_follow_age_seconds":2592000,"min_account_age_seconds":86400}'
 ```
+
+Правила отправителя: `require_twitch_sender`, `require_follow`, `min_follow_age_seconds`, `require_subscription`, `min_account_age_seconds`. Create offer может вернуть 403 `account_too_new` / `twitch_not_linked` / `twitch_not_following` / `twitch_follow_too_new` / `twitch_subscription_required` или 503 `twitch_unavailable`.
 
 ## Public streamers
 

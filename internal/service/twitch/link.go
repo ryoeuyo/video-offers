@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -58,6 +59,7 @@ type LinkRepository interface {
 	Upsert(ctx context.Context, rec domain.TwitchLinkRecord) error
 	GetByUserID(ctx context.Context, userID uuid.UUID) (domain.TwitchLink, error)
 	ExistsByUserID(ctx context.Context, userID uuid.UUID) (bool, error)
+	GetRecordByUserID(ctx context.Context, userID uuid.UUID) (domain.TwitchLinkRecord, error)
 	DeleteByUserID(ctx context.Context, userID uuid.UUID) error
 }
 
@@ -74,11 +76,14 @@ type LinkService struct {
 	settings   StreamerSettingsLookup
 	users      UserRoleLookup
 	oauth      *OAuthClient
+	helix      HelixAPI
 	sealKey    string
 	stateKey   string
 	stateTTL   time.Duration
 	successURL string
 	enabled    bool
+	gateMu     sync.Mutex
+	gateCache  map[string]gateCacheEntry
 }
 
 func NewLinkService(
@@ -90,16 +95,22 @@ func NewLinkService(
 	successURL string,
 	enabled bool,
 ) *LinkService {
+	var helix HelixAPI
+	if oauth != nil {
+		helix = NewHelixClient(oauth.ClientID(), oauth.HTTP())
+	}
 	return &LinkService{
 		repo:       repo,
 		settings:   settings,
 		users:      users,
 		oauth:      oauth,
+		helix:      helix,
 		sealKey:    sealKey,
 		stateKey:   sealKey,
 		stateTTL:   10 * time.Minute,
 		successURL: successURL,
 		enabled:    enabled,
+		gateCache:  make(map[string]gateCacheEntry),
 	}
 }
 
@@ -179,10 +190,11 @@ func (s *LinkService) HandleCallback(ctx context.Context, code, state string) (s
 }
 
 type PublicLink struct {
-	Linked      bool   `json:"linked"`
-	Login       string `json:"login,omitempty"`
-	DisplayName string `json:"display_name,omitempty"`
-	LinkedAt    string `json:"linked_at,omitempty"`
+	Linked               bool   `json:"linked"`
+	Login                string `json:"login,omitempty"`
+	DisplayName          string `json:"display_name,omitempty"`
+	LinkedAt             string `json:"linked_at,omitempty"`
+	HasSubscriptionScope bool   `json:"has_subscription_scope"`
 }
 
 func (s *LinkService) GetLink(ctx context.Context, userID uuid.UUID) (PublicLink, error) {
@@ -194,15 +206,36 @@ func (s *LinkService) GetLink(ctx context.Context, userID uuid.UUID) (PublicLink
 		return PublicLink{}, err
 	}
 	return PublicLink{
-		Linked:      true,
-		Login:       link.TwitchLogin,
-		DisplayName: link.TwitchDisplayName,
-		LinkedAt:    link.LinkedAt.UTC().Format(time.RFC3339),
+		Linked:               true,
+		Login:                link.TwitchLogin,
+		DisplayName:          link.TwitchDisplayName,
+		LinkedAt:             link.LinkedAt.UTC().Format(time.RFC3339),
+		HasSubscriptionScope: hasScope(link.Scopes, domain.TwitchScopeChannelSubscriptions),
 	}, nil
 }
 
 func (s *LinkService) HasLink(ctx context.Context, userID uuid.UUID) (bool, error) {
 	return s.repo.ExistsByUserID(ctx, userID)
+}
+
+func (s *LinkService) HasScope(ctx context.Context, userID uuid.UUID, scope string) (bool, error) {
+	link, err := s.repo.GetByUserID(ctx, userID)
+	if err != nil {
+		if e, ok := domain.AsError(err); ok && e.Kind == domain.KindNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	return hasScope(link.Scopes, scope), nil
+}
+
+func hasScope(scopes []string, want string) bool {
+	for _, s := range scopes {
+		if s == want {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *LinkService) GetLogin(ctx context.Context, userID uuid.UUID) (string, error) {
@@ -227,7 +260,7 @@ func (s *LinkService) Unlink(ctx context.Context, userID uuid.UUID) error {
 		if err != nil && !isNotFound(err) {
 			return fmt.Errorf("get settings: %w", err)
 		}
-		if err == nil && settings.AcceptingOffers {
+		if err == nil && (settings.AcceptingOffers || settings.TwitchGatesEnabled()) {
 			return domain.ErrConflict.WithCode("twitch_unlink_blocked", "отключите приём офферов перед отвязкой Twitch")
 		}
 	}

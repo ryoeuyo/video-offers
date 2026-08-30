@@ -85,7 +85,11 @@ func run() error {
 
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	videoResolver := video.NewCompositeResolver(video.NewYouTubeResolver(httpClient))
-	offerSvc := service.NewOfferService(offerRepo, userRepo, settingsRepo, videoResolver)
+	var offerGates service.OfferTwitchGate
+	if svc := twitchAsLinkService(twitchChecker); svc != nil {
+		offerGates = svc
+	}
+	offerSvc := service.NewOfferService(offerRepo, userRepo, settingsRepo, videoResolver, offerGates)
 	userSvc := service.NewUserService(userRepo, settingsRepo, twitchChecker)
 
 	srv := httpapi.NewServer(cfg, log, httpapi.Deps{

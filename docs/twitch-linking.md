@@ -180,18 +180,18 @@ Rate limits Twitch — учитывать в кеше; batch не нужен н�
 
 ### Фаза C — Follow gate (2–3 дня)
 
-- [ ] Поля settings + PATCH
-- [ ] `TwitchClient` interface: `IsFollower`, cache
-- [ ] Enforcement в `Create`
-- [ ] Error codes + фронт сообщения
+- [x] Поля settings + PATCH
+- [x] `TwitchClient` interface: `IsFollower`, cache
+- [x] Enforcement в `Create`
+- [x] Error codes + фронт сообщения
 
 **Критерий:** non-follower получает 403; follower — 201.
 
 ### Фаза D — Follow-time + subscription (2–3 дня)
 
-- [ ] `min_follow_age_seconds` enforcement
-- [ ] Re-auth стримера для `channel:read:subscriptions` при включении sub-gate
-- [ ] Sub check + тесты
+- [x] `min_follow_age_seconds` enforcement
+- [x] Re-auth стримера для `channel:read:subscriptions` при включении sub-gate
+- [x] Sub check + тесты
 
 **Критерий:** свежий follow и non-sub отклоняются по правилам.
 
