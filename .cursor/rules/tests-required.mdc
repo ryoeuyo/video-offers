@@ -1,0 +1,31 @@
+---
+description: Пиши тесты на новую бизнес-логику
+alwaysApply: true
+---
+
+# Тесты обязательны для бизнес-логики
+
+При добавлении или изменении бизнес-логики **всегда** пиши тесты в том же PR/задаче.
+
+## Где и как
+
+| Слой | Тип теста | Инструменты |
+|---|---|---|
+| `internal/service` | Unit | Фейковые репозитории (ручные моки, без mockery) |
+| `internal/repo` | Integration | testcontainers-go + Postgres, goose migrate up |
+| `internal/transport/http` | Integration | Fiber `app.Test` + testcontainers |
+| `internal/pkg` | Unit | Стандартный `testing` |
+
+## Что покрывать
+
+- Happy path и основные ошибки (validation, not found, conflict, unauthorized)
+- Доменные инварианты (переходы статусов, дедуп, права доступа)
+- Не пиши тесты, которые тривиально дублируют компилятор или стандартную библиотеку
+
+## Перед завершения задачи
+
+```bash
+make test   # go test ./... -race
+```
+
+Новый код без тестов в service/pkg — незавершённая задача.
