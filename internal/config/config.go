@@ -12,6 +12,7 @@ type Config struct {
 	Addr            string        `env:"HTTP_ADDR" envDefault:":8080"`
 	LogLevel        string        `env:"LOG_LEVEL" envDefault:"info"`
 	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT" envDefault:"10s"`
+	CORSOrigins     string        `env:"CORS_ORIGINS" envDefault:"http://localhost:5173"`
 
 	DB        DB
 	Auth      Auth

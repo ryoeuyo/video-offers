@@ -28,7 +28,7 @@ type YouTubeResolver struct {
 
 func NewYouTubeResolver(client HTTPClient) *YouTubeResolver {
 	if client == nil {
-		client = &http.Client{Timeout: 3 * time.Second}
+		client = &http.Client{Timeout: 5 * time.Second}
 	}
 	return &YouTubeResolver{client: client, baseURL: "https://www.youtube.com/oembed"}
 }
@@ -57,6 +57,8 @@ func (r *YouTubeResolver) Resolve(ctx context.Context, p ParsedURL) (domain.Vide
 	if err != nil {
 		return meta, fmt.Errorf("build oembed request: %w", err)
 	}
+	req.Header.Set("User-Agent", "OfferBox/1.0 (+https://github.com/ruslan/video-offers)")
+	req.Header.Set("Accept", "application/json")
 
 	resp, err := r.client.Do(req)
 	if err != nil {
@@ -80,6 +82,9 @@ func (r *YouTubeResolver) Resolve(ctx context.Context, p ParsedURL) (domain.Vide
 
 	meta.Title = payload.Title
 	meta.ThumbnailURL = payload.ThumbnailURL
+	if meta.ThumbnailURL == "" {
+		meta.ThumbnailURL = YouTubeThumbnailURL(p.ExternalID)
+	}
 	return meta, nil
 }
 

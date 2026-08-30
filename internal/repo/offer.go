@@ -178,6 +178,23 @@ func (r *OfferRepo) UpdateStatus(ctx context.Context, streamerID, offerID uuid.U
 	return o, nil
 }
 
+func (r *OfferRepo) UpdateMeta(ctx context.Context, offerID uuid.UUID, title, thumbnailURL string) error {
+	const q = `
+		UPDATE offers
+		SET title = $2,
+		    thumbnail_url = CASE WHEN thumbnail_url = '' THEN $3 ELSE thumbnail_url END
+		WHERE id = $1`
+
+	tag, err := r.pool.Exec(ctx, q, offerID, title, thumbnailURL)
+	if err != nil {
+		return MapError(err)
+	}
+	if tag.RowsAffected() == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
+}
+
 func (r *OfferRepo) DeleteByStreamer(ctx context.Context, streamerID, offerID uuid.UUID) error {
 	const q = `DELETE FROM offers WHERE id = $1 AND streamer_id = $2`
 	tag, err := r.pool.Exec(ctx, q, offerID, streamerID)

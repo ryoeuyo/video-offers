@@ -23,6 +23,7 @@ type OfferRepository interface {
 	ListByStreamer(ctx context.Context, p repo.ListStreamerOffersParams) ([]domain.Offer, error)
 	ListBySender(ctx context.Context, p repo.ListSenderOffersParams) ([]domain.Offer, error)
 	UpdateStatus(ctx context.Context, streamerID, offerID uuid.UUID, status domain.OfferStatus, watchedAt *time.Time) (domain.Offer, error)
+	UpdateMeta(ctx context.Context, offerID uuid.UUID, title, thumbnailURL string) error
 	DeleteByStreamer(ctx context.Context, streamerID, offerID uuid.UUID) error
 	DeletePendingBySender(ctx context.Context, senderID, offerID uuid.UUID) error
 }
@@ -107,6 +108,9 @@ func (s *OfferService) Create(
 			meta = resolved
 		}
 	}
+	if meta.ThumbnailURL == "" && parsed.Provider == domain.ProviderYouTube {
+		meta.ThumbnailURL = video.YouTubeThumbnailURL(parsed.ExternalID)
+	}
 
 	id, err := pkguuid.New()
 	if err != nil {
@@ -133,6 +137,46 @@ func (s *OfferService) Create(
 		return domain.Offer{}, err
 	}
 	return offer, nil
+}
+
+func (s *OfferService) enrichOffersMeta(ctx context.Context, offers []domain.Offer) []domain.Offer {
+	if s.resolver == nil {
+		return offers
+	}
+
+	for i := range offers {
+		o := &offers[i]
+		if o.Title != "" || o.Provider != domain.ProviderYouTube || o.ExternalID == "" {
+			continue
+		}
+
+		resolveCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		meta, err := s.resolver.Resolve(resolveCtx, video.ParsedURL{
+			Original:   o.URL,
+			Normalized: o.NormalizedURL,
+			Provider:   o.Provider,
+			ExternalID: o.ExternalID,
+		})
+		cancel()
+		if err != nil || meta.Title == "" {
+			continue
+		}
+
+		thumb := meta.ThumbnailURL
+		if thumb == "" {
+			thumb = video.YouTubeThumbnailURL(o.ExternalID)
+		}
+		if err := s.offers.UpdateMeta(ctx, o.ID, meta.Title, thumb); err != nil {
+			continue
+		}
+
+		o.Title = meta.Title
+		if o.ThumbnailURL == "" {
+			o.ThumbnailURL = thumb
+		}
+	}
+
+	return offers
 }
 
 type OfferListPage struct {
@@ -176,6 +220,7 @@ func (s *OfferService) ListQueue(
 	if err != nil {
 		return OfferListPage{}, err
 	}
+	items = s.enrichOffersMeta(ctx, items)
 	return paginateOffers(items, limit), nil
 }
 
@@ -204,6 +249,7 @@ func (s *OfferService) ListSent(
 	if err != nil {
 		return OfferListPage{}, err
 	}
+	items = s.enrichOffersMeta(ctx, items)
 	return paginateOffers(items, limit), nil
 }
 

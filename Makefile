@@ -3,10 +3,16 @@ GOOSE_DBSTRING ?= $(shell grep -E '^DATABASE_URL=' .env 2>/dev/null | cut -d= -f
 GOOSE_MIGRATION_DIR ?= ./migrations
 export GOOSE_DRIVER GOOSE_DBSTRING GOOSE_MIGRATION_DIR
 
-.PHONY: run build test test-integration lint db-up db-down migrate-up migrate-down migrate-status migrate-new tidy
+.PHONY: run build test test-integration lint db-up db-down migrate-up migrate-down migrate-status migrate-new tidy web web-build
 
 run:
 	go run ./cmd/api
+
+web:
+	cd web && npm run dev
+
+web-build:
+	cd web && npm run build
 
 build:
 	go build -o bin/api ./cmd/api

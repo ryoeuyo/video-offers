@@ -128,6 +128,20 @@ func (f *fakeOfferRepo) Create(_ context.Context, o domain.Offer) error {
 	return nil
 }
 
+func (f *fakeOfferRepo) UpdateMeta(_ context.Context, offerID uuid.UUID, title, thumbnailURL string) error {
+	for i, o := range f.offers {
+		if o.ID != offerID {
+			continue
+		}
+		f.offers[i].Title = title
+		if f.offers[i].ThumbnailURL == "" {
+			f.offers[i].ThumbnailURL = thumbnailURL
+		}
+		return nil
+	}
+	return domain.ErrNotFound
+}
+
 type fakeOfferStreamerRepo struct {
 	users map[string]domain.User
 }
@@ -269,6 +283,10 @@ func TestOfferService_Create_ResolverFailureStillCreates(t *testing.T) {
 	if offer.Title != "" {
 		t.Errorf("expected empty title on resolver failure, got %q", offer.Title)
 	}
+	wantThumb := "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
+	if offer.ThumbnailURL != wantThumb {
+		t.Errorf("thumbnail = %q, want %q", offer.ThumbnailURL, wantThumb)
+	}
 }
 
 func TestOfferService_Create_StreamerNotFound(t *testing.T) {
@@ -372,5 +390,29 @@ func TestOfferService_DeleteByStreamer(t *testing.T) {
 	}
 	if len(offers.offers) != 0 {
 		t.Error("offer should be deleted")
+	}
+}
+
+func TestOfferService_ListSent_EnrichesMissingTitle(t *testing.T) {
+	senderID := uuid.Must(uuid.NewV7())
+	offerID := uuid.Must(uuid.NewV7())
+	offers := &fakeOfferRepo{offers: []domain.Offer{{
+		ID: offerID, SenderID: &senderID, Provider: domain.ProviderYouTube,
+		ExternalID: "dQw4w9WgXcQ", NormalizedURL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+		URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ", Status: domain.StatusPending,
+		CreatedAt: time.Now().UTC(),
+	}}}
+	resolver := &fakeVideoResolver{meta: domain.VideoMeta{Title: "Never Gonna Give You Up"}}
+	svc := NewOfferService(offers, nil, nil, resolver)
+
+	page, err := svc.ListSent(context.Background(), senderID, "", 20)
+	if err != nil {
+		t.Fatalf("ListSent: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(page.Items))
+	}
+	if page.Items[0].Title != "Never Gonna Give You Up" {
+		t.Errorf("title = %q", page.Items[0].Title)
 	}
 }

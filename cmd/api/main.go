@@ -60,7 +60,7 @@ func run() error {
 	userSvc := service.NewUserService(userRepo, settingsRepo)
 	offerRepo := repo.NewOfferRepo(pool)
 
-	httpClient := &http.Client{Timeout: 3 * time.Second}
+	httpClient := &http.Client{Timeout: 5 * time.Second}
 	videoResolver := video.NewCompositeResolver(video.NewYouTubeResolver(httpClient))
 	offerSvc := service.NewOfferService(offerRepo, userRepo, settingsRepo, videoResolver)
 

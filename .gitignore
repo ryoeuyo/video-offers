@@ -3,3 +3,5 @@ bin/
 *.test
 coverage.out
 .DS_Store
+web/node_modules/
+web/dist/

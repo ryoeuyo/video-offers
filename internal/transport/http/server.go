@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 	"github.com/gofiber/fiber/v2/middleware/requestid"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -45,6 +47,13 @@ func NewServer(cfg config.Config, log *slog.Logger, deps Deps) *Server {
 
 	app.Use(requestid.New())
 	app.Use(recover.New())
+	if origins := strings.TrimSpace(cfg.CORSOrigins); origins != "" {
+		app.Use(cors.New(cors.Config{
+			AllowOrigins: origins,
+			AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+			AllowMethods: "GET,POST,PATCH,DELETE,OPTIONS",
+		}))
+	}
 	app.Use(requestLogger(log))
 
 	s := &Server{app: app, cfg: cfg, log: log}

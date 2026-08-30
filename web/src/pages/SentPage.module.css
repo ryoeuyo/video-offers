@@ -1,0 +1,38 @@
+.header {
+  margin-bottom: 1.5rem;
+}
+
+.header h1 {
+  margin: 0 0 0.35rem;
+  font-size: 1.75rem;
+}
+
+.header p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.revoke {
+  padding: 0.35rem 0.65rem;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: 0.4rem;
+  background: transparent;
+  color: #fca5a5;
+  font: inherit;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.revoke:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.1);
+}
+
+.revoke:disabled {
+  opacity: 0.5;
+}
