@@ -36,6 +36,8 @@ func statusFor(kind domain.Kind) int {
 		return fiber.StatusUnprocessableEntity
 	case domain.KindRateLimited:
 		return fiber.StatusTooManyRequests
+	case domain.KindUnavailable:
+		return fiber.StatusServiceUnavailable
 	default:
 		return fiber.StatusInternalServerError
 	}

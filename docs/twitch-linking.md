@@ -3,7 +3,7 @@
 **Статус:** backlog (post-MVP)  
 **Приоритет:** высокий  
 **Зависит от:** MVP auth, streamer settings, create offer  
-**Связано:** [AGENTS.md](../AGENTS.md) — «OAuth через Twitch», `min_account_age`, `allow_anonymous`
+**Связано:** [AGENTS.md](../AGENTS.md) — «OAuth через Twitch», `min_account_age`, `allow_anonymous`; UI и PATCH настроек gate — [offer-sender-gates.md](./offer-sender-gates.md)
 
 ---
 
@@ -162,19 +162,19 @@ Rate limits Twitch — учитывать в кеше; batch не нужен н�
 
 ### Фаза A — OAuth link (2–3 дня)
 
-- [ ] Twitch app, env: `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_REDIRECT_URI`
-- [ ] `user_twitch_links` repo + encrypt/decrypt tokens
-- [ ] Connect / callback / GET / DELETE `/me/twitch`
-- [ ] Unit + integration tests (mock Twitch HTTP)
-- [ ] Фронт: привязка в настройках
+- [x] Twitch app, env: `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_REDIRECT_URI`
+- [x] `user_twitch_links` repo + encrypt/decrypt tokens
+- [x] Connect / callback / GET / DELETE `/me/twitch`
+- [x] Unit + integration tests (mock Twitch HTTP)
+- [x] Фронт: привязка в настройках
 
 **Критерий:** viewer привязывает Twitch, видит login в профиле.
 
 ### Фаза B — Обязательность для стримера (0.5–1 день)
 
-- [ ] Block `accepting_offers=true` без link
-- [ ] Показ `twitch_login` на публичном профиле
-- [ ] Тесты + UI предупреждения
+- [x] Block `accepting_offers=true` без link
+- [x] Показ `twitch_login` на публичном профиле
+- [x] Тесты + UI предупреждения
 
 **Критерий:** стример без Twitch не может включить приём.
 

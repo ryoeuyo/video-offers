@@ -49,6 +49,27 @@ curl -s -X PATCH localhost:8080/api/v1/me \
   -d '{"display_name":"Alice","role":"streamer"}'
 ```
 
+## Twitch
+
+Нужны `TWITCH_CLIENT_ID`, `TWITCH_CLIENT_SECRET`, `TWITCH_REDIRECT_URI`. Redirect в Twitch Developer Console: `http://localhost:8080/api/v1/auth/twitch/callback`.
+
+```bash
+# Получить URL авторизации
+curl -s localhost:8080/api/v1/auth/twitch/connect \
+  -H "Authorization: Bearer <access_token>"
+# {"url":"https://id.twitch.tv/oauth2/authorize?..."}
+
+# Статус привязки
+curl -s localhost:8080/api/v1/me/twitch \
+  -H "Authorization: Bearer <access_token>"
+
+# Отвязать
+curl -s -X DELETE localhost:8080/api/v1/me/twitch \
+  -H "Authorization: Bearer <access_token>"
+```
+
+Стример без Twitch не может включить `accepting_offers` (409 `twitch_required`).
+
 ## Streamer settings
 
 ```bash

@@ -5,6 +5,7 @@ import type {
   StreamerPublic,
   StreamerSettings,
   TokenResponse,
+  TwitchLink,
   User,
 } from './types'
 
@@ -173,6 +174,18 @@ export const api = {
 
   updateSettings(body: { accepting_offers?: boolean }) {
     return request<StreamerSettings>('/api/v1/me/settings', { method: 'PATCH', body })
+  },
+
+  getTwitch() {
+    return request<TwitchLink>('/api/v1/me/twitch')
+  },
+
+  unlinkTwitch() {
+    return request<void>('/api/v1/me/twitch', { method: 'DELETE' })
+  },
+
+  connectTwitch() {
+    return request<{ url: string }>('/api/v1/auth/twitch/connect')
   },
 
   listStreamers(params?: { q?: string; limit?: number; cursor?: string }) {

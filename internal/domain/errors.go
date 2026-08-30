@@ -18,6 +18,7 @@ const (
 	KindConflict
 	KindUnprocessable
 	KindRateLimited
+	KindUnavailable
 )
 
 // Сентинелы для errors.Is: errors.Is(err, domain.ErrNotFound).
@@ -29,6 +30,7 @@ var (
 	ErrConflict      = &Error{Kind: KindConflict, Code: "conflict", Message: "конфликт состояния"}
 	ErrUnprocessable = &Error{Kind: KindUnprocessable, Code: "unprocessable", Message: "не удалось обработать"}
 	ErrRateLimited   = &Error{Kind: KindRateLimited, Code: "rate_limited", Message: "слишком много запросов"}
+	ErrUnavailable   = &Error{Kind: KindUnavailable, Code: "unavailable", Message: "сервис временно недоступен"}
 	ErrInternal      = &Error{Kind: KindInternal, Code: "internal", Message: "внутренняя ошибка"}
 )
 

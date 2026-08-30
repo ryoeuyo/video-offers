@@ -112,3 +112,32 @@
   height: 1.1rem;
   accent-color: var(--accent);
 }
+
+.twitchLinked {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.twitchLinked p {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.dangerBtn {
+  padding: 0.5rem 0.9rem;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 0.5rem;
+  background: transparent;
+  color: #fca5a5;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.hint {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -38,11 +39,17 @@ type UpdateSettingsInput struct {
 	AcceptingOffers *bool
 }
 
+type TwitchLinkChecker interface {
+	HasLink(ctx context.Context, userID uuid.UUID) (bool, error)
+	GetLogin(ctx context.Context, userID uuid.UUID) (string, error)
+}
+
 type PublicStreamer struct {
 	Username        string
 	DisplayName     string
 	AvatarURL       string
 	AcceptingOffers bool
+	TwitchLogin     string
 }
 
 type StreamerListPage struct {
@@ -53,10 +60,27 @@ type StreamerListPage struct {
 type UserService struct {
 	users    ProfileUserRepository
 	settings SettingsRepository
+	twitch   TwitchLinkChecker
 }
 
-func NewUserService(users ProfileUserRepository, settings SettingsRepository) *UserService {
-	return &UserService{users: users, settings: settings}
+func NewUserService(users ProfileUserRepository, settings SettingsRepository, twitch TwitchLinkChecker) *UserService {
+	return &UserService{users: users, settings: settings, twitch: normalizeTwitchChecker(twitch)}
+}
+
+// normalizeTwitchChecker убирает typed-nil (*T)(nil) из интерфейса — иначе twitch != nil, но вызов паникует.
+func normalizeTwitchChecker(t TwitchLinkChecker) TwitchLinkChecker {
+	if t == nil {
+		return nil
+	}
+	v := reflect.ValueOf(t)
+	if v.Kind() == reflect.Pointer && v.IsNil() {
+		return nil
+	}
+	return t
+}
+
+func (s *UserService) twitchConfigured() bool {
+	return s.twitch != nil
 }
 
 func (s *UserService) UpdateProfile(ctx context.Context, userID uuid.UUID, in UpdateProfileInput) (domain.User, error) {
@@ -116,9 +140,17 @@ func (s *UserService) applyRoleChange(ctx context.Context, user *domain.User, ro
 		_, err := s.settings.GetByUserID(ctx, user.ID)
 		if errors.Is(err, domain.ErrNotFound) {
 			now := time.Now().UTC()
+			accepting := true
+			if s.twitchConfigured() {
+				linked, linkErr := s.twitch.HasLink(ctx, user.ID)
+				if linkErr != nil {
+					return fmt.Errorf("check twitch link: %w", linkErr)
+				}
+				accepting = linked
+			}
 			if err := s.settings.Create(ctx, domain.StreamerSettings{
 				UserID:          user.ID,
-				AcceptingOffers: true,
+				AcceptingOffers: accepting,
 				AllowAnonymous:  false,
 				MinAccountAge:   0,
 				CreatedAt:       now,
@@ -166,6 +198,16 @@ func (s *UserService) UpdateSettings(ctx context.Context, userID uuid.UUID, in U
 	settings.AcceptingOffers = *in.AcceptingOffers
 	settings.UpdatedAt = time.Now().UTC()
 
+	if settings.AcceptingOffers && s.twitchConfigured() {
+		linked, err := s.twitch.HasLink(ctx, userID)
+		if err != nil {
+			return domain.StreamerSettings{}, fmt.Errorf("check twitch link: %w", err)
+		}
+		if !linked {
+			return domain.StreamerSettings{}, domain.ErrConflict.WithCode("twitch_required", "привяжите Twitch, чтобы принимать офферы")
+		}
+	}
+
 	if err := s.settings.Update(ctx, settings); err != nil {
 		return domain.StreamerSettings{}, fmt.Errorf("update settings: %w", err)
 	}
@@ -191,7 +233,18 @@ func (s *UserService) GetPublicStreamer(ctx context.Context, username string) (P
 		return PublicStreamer{}, fmt.Errorf("get streamer settings: %w", err)
 	}
 
-	return toPublicStreamer(user, settings.AcceptingOffers), nil
+	return toPublicStreamer(user, settings.AcceptingOffers, s.twitchLogin(ctx, user.ID)), nil
+}
+
+func (s *UserService) twitchLogin(ctx context.Context, userID uuid.UUID) string {
+	if !s.twitchConfigured() {
+		return ""
+	}
+	login, err := s.twitch.GetLogin(ctx, userID)
+	if err != nil {
+		return ""
+	}
+	return login
 }
 
 func (s *UserService) ListStreamers(ctx context.Context, usernamePrefix, cursorRaw string, limit int) (StreamerListPage, error) {
@@ -226,18 +279,19 @@ func (s *UserService) ListStreamers(ctx context.Context, usernamePrefix, cursorR
 			})
 			break
 		}
-		page.Items = append(page.Items, toPublicStreamer(item.User, item.AcceptingOffers))
+		page.Items = append(page.Items, toPublicStreamer(item.User, item.AcceptingOffers, s.twitchLogin(ctx, item.User.ID)))
 	}
 
 	return page, nil
 }
 
-func toPublicStreamer(u domain.User, accepting bool) PublicStreamer {
+func toPublicStreamer(u domain.User, accepting bool, twitchLogin string) PublicStreamer {
 	return PublicStreamer{
 		Username:        u.Username,
 		DisplayName:     u.DisplayName,
 		AvatarURL:       u.AvatarURL,
 		AcceptingOffers: accepting,
+		TwitchLogin:     twitchLogin,
 	}
 }
 

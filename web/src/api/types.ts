@@ -32,6 +32,14 @@ export interface StreamerPublic {
   display_name: string
   avatar_url: string
   accepting_offers: boolean
+  twitch_login?: string
+}
+
+export interface TwitchLink {
+  linked: boolean
+  login?: string
+  display_name?: string
+  linked_at?: string
 }
 
 export interface StreamerSettings {

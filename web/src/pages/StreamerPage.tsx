@@ -71,7 +71,21 @@ export function StreamerPage() {
         </div>
         <div>
           <h1>{display}</h1>
-          <p className={styles.username}>@{streamer.username}</p>
+          <p className={styles.username}>
+            @{streamer.username}
+            {streamer.twitch_login && (
+              <>
+                {' · '}
+                <a
+                  href={`https://twitch.tv/${streamer.twitch_login}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  twitch.tv/{streamer.twitch_login}
+                </a>
+              </>
+            )}
+          </p>
           <span
             className={`${styles.badge} ${streamer.accepting_offers ? styles.open : styles.closed}`}
           >

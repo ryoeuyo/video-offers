@@ -81,7 +81,7 @@ MVP считается готовым, когда через API (curl / Postman
 |---|---|
 | OAuth (Twitch и др.) | Отдельный большой блок — см. [docs/twitch-linking.md](./twitch-linking.md) |
 | oEmbed Twitch / VK | YouTube покрывает основной кейс; остальное — с голой ссылкой |
-| `min_account_age` enforcement | Дефолт 0, логику включим позже |
+| `min_account_age` enforcement | Дефолт 0, логику включим позже — [offer-sender-gates.md](./offer-sender-gates.md) |
 | `allow_anonymous` | В MVP все офферы только от авторизованных |
 | SSE / live-обновление очереди | Фронт polling'ом |
 | Модерация, блок-листы | Не нужны для проверки гипотезы |

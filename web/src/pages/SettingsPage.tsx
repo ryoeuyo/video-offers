@@ -1,16 +1,21 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
-import { api } from '../api/client'
+import { Link, useSearchParams } from 'react-router-dom'
+import { api, ApiClientError } from '../api/client'
+import type { TwitchLink } from '../api/types'
 import { useAuth } from '../context/AuthContext'
 import styles from './SettingsPage.module.css'
 
 export function SettingsPage() {
   const { user, refreshUser } = useAuth()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [displayName, setDisplayName] = useState('')
   const [acceptingOffers, setAcceptingOffers] = useState(true)
   const [loadingSettings, setLoadingSettings] = useState(false)
   const [saving, setSaving] = useState(false)
   const [becomingStreamer, setBecomingStreamer] = useState(false)
+  const [twitch, setTwitch] = useState<TwitchLink | null>(null)
+  const [twitchAvailable, setTwitchAvailable] = useState<boolean | null>(null)
+  const [twitchBusy, setTwitchBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
@@ -19,6 +24,32 @@ export function SettingsPage() {
       setDisplayName(user.display_name)
     }
   }, [user])
+
+  useEffect(() => {
+    if (searchParams.get('twitch') === 'linked') {
+      setMessage('Twitch привязан')
+      searchParams.delete('twitch')
+      setSearchParams(searchParams, { replace: true })
+    }
+  }, [searchParams, setSearchParams])
+
+  useEffect(() => {
+    api
+      .getTwitch()
+      .then((link) => {
+        setTwitchAvailable(true)
+        setTwitch(link)
+      })
+      .catch((err) => {
+        if (err instanceof ApiClientError && err.code === 'route_not_found') {
+          setTwitchAvailable(false)
+          setTwitch(null)
+          return
+        }
+        setTwitchAvailable(true)
+        setTwitch({ linked: false })
+      })
+  }, [])
 
   useEffect(() => {
     if (user?.role !== 'streamer') return
@@ -53,7 +84,11 @@ export function SettingsPage() {
     try {
       await api.updateMe({ role: 'streamer' })
       await refreshUser()
-      setMessage('Вы стали стримером! Настройте приём предложений ниже.')
+      setMessage(
+        twitch?.linked
+          ? 'Вы стали стримером! Настройте приём предложений ниже.'
+          : 'Вы стали стримером. Привяжите Twitch, чтобы включить приём офферов.',
+      )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Ошибка')
     } finally {
@@ -73,6 +108,40 @@ export function SettingsPage() {
       setError(err instanceof Error ? err.message : 'Ошибка')
     } finally {
       setSaving(false)
+    }
+  }
+
+  async function connectTwitch() {
+    setTwitchBusy(true)
+    setError('')
+    try {
+      const { url } = await api.connectTwitch()
+      window.location.href = url
+    } catch (err) {
+      if (err instanceof ApiClientError && err.code === 'route_not_found') {
+        setError(
+          'Twitch не настроен на сервере. Добавьте TWITCH_CLIENT_ID и TWITCH_CLIENT_SECRET в .env и перезапустите API.',
+        )
+      } else {
+        setError(err instanceof Error ? err.message : 'Ошибка')
+      }
+      setTwitchBusy(false)
+    }
+  }
+
+  async function unlinkTwitch() {
+    if (!confirm('Отвязать Twitch?')) return
+    setTwitchBusy(true)
+    setError('')
+    setMessage('')
+    try {
+      await api.unlinkTwitch()
+      setTwitch({ linked: false })
+      setMessage('Twitch отвязан')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Ошибка')
+    } finally {
+      setTwitchBusy(false)
     }
   }
 
@@ -111,6 +180,45 @@ export function SettingsPage() {
       </section>
 
       <section className={styles.section}>
+        <h2>Twitch</h2>
+        {twitchAvailable === false ? (
+          <p className={styles.hint}>
+            Интеграция Twitch выключена на сервере. Заполните{' '}
+            <code>TWITCH_CLIENT_ID</code> и <code>TWITCH_CLIENT_SECRET</code> в{' '}
+            <code>.env</code> и перезапустите <code>make run</code>.
+          </p>
+        ) : twitch?.linked ? (
+          <div className={styles.twitchLinked}>
+            <p>
+              Привязан как <strong>@{twitch.login}</strong>
+              {twitch.display_name && twitch.display_name !== twitch.login
+                ? ` (${twitch.display_name})`
+                : ''}
+            </p>
+            <button
+              type="button"
+              className={styles.dangerBtn}
+              onClick={unlinkTwitch}
+              disabled={twitchBusy}
+            >
+              Отвязать
+            </button>
+          </div>
+        ) : (
+          <div className={styles.becomeStreamer}>
+            <p>
+              {user.role === 'streamer'
+                ? 'Для приёма офферов нужен привязанный Twitch'
+                : 'Привяжите Twitch, чтобы стримеры могли проверять follow и подписку'}
+            </p>
+            <button type="button" onClick={connectTwitch} disabled={twitchBusy}>
+              {twitchBusy ? '...' : 'Привязать Twitch'}
+            </button>
+          </div>
+        )}
+      </section>
+
+      <section className={styles.section}>
         <h2>Роль</h2>
         {user.role === 'streamer' ? (
           <p className={styles.roleBadge}>Вы стример — зрители могут предлагать вам видео</p>
@@ -136,10 +244,14 @@ export function SettingsPage() {
                   type="checkbox"
                   checked={acceptingOffers}
                   onChange={(e) => setAcceptingOffers(e.target.checked)}
+                  disabled={twitchAvailable === true && !twitch?.linked}
                 />
                 <span>Принимать предложения видео</span>
               </label>
-              <button type="submit" disabled={saving}>
+              {twitchAvailable === true && !twitch?.linked && (
+                <p className={styles.hint}>Сначала привяжите Twitch</p>
+              )}
+              <button type="submit" disabled={saving || (twitchAvailable === true && !twitch?.linked)}>
                 {saving ? 'Сохранение...' : 'Сохранить'}
               </button>
             </form>

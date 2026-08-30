@@ -63,6 +63,7 @@ type streamerPublicResponse struct {
 	DisplayName     string `json:"display_name"`
 	AvatarURL       string `json:"avatar_url"`
 	AcceptingOffers bool   `json:"accepting_offers"`
+	TwitchLogin     string `json:"twitch_login,omitempty"`
 }
 
 type listResponse[T any] struct {
@@ -146,6 +147,7 @@ func toStreamerPublicResponse(s service.PublicStreamer) streamerPublicResponse {
 		DisplayName:     s.DisplayName,
 		AvatarURL:       s.AvatarURL,
 		AcceptingOffers: s.AcceptingOffers,
+		TwitchLogin:     s.TwitchLogin,
 	}
 }
 
