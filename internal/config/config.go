@@ -17,6 +17,15 @@ type Config struct {
 	DB        DB
 	Auth      Auth
 	RateLimit RateLimit
+	Twitch    Twitch
+}
+
+type Twitch struct {
+	ClientID           string `env:"TWITCH_CLIENT_ID"`
+	ClientSecret       string `env:"TWITCH_CLIENT_SECRET"`
+	RedirectURI        string `env:"TWITCH_REDIRECT_URI"`
+	TokenEncKey        string `env:"TWITCH_TOKEN_ENC_KEY"`
+	FrontendSuccessURL string `env:"FRONTEND_OAUTH_SUCCESS_URL" envDefault:"http://localhost:5173/settings"`
 }
 
 type RateLimit struct {
@@ -41,6 +50,17 @@ type Auth struct {
 }
 
 func (c Config) IsDev() bool { return c.Env == "dev" }
+
+func (c Config) TwitchEnabled() bool {
+	return c.Twitch.ClientID != "" && c.Twitch.ClientSecret != "" && c.Twitch.RedirectURI != ""
+}
+
+func (c Config) TwitchSealKey() string {
+	if k := c.Twitch.TokenEncKey; k != "" {
+		return k
+	}
+	return c.Auth.JWTSecret
+}
 
 func Load() (Config, error) {
 	var cfg Config

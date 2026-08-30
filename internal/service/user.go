@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"strings"
 	"time"
 
@@ -35,7 +36,35 @@ type UpdateProfileInput struct {
 }
 
 type UpdateSettingsInput struct {
-	AcceptingOffers *bool
+	AcceptingOffers      *bool
+	MinAccountAgeSeconds *int
+	RequireTwitchSender  *bool
+	RequireFollow        *bool
+	MinFollowAgeSeconds  *int
+	RequireSubscription  *bool
+}
+
+func (in UpdateSettingsInput) empty() bool {
+	return in.AcceptingOffers == nil &&
+		in.MinAccountAgeSeconds == nil &&
+		in.RequireTwitchSender == nil &&
+		in.RequireFollow == nil &&
+		in.MinFollowAgeSeconds == nil &&
+		in.RequireSubscription == nil
+}
+
+type TwitchLinkChecker interface {
+	HasLink(ctx context.Context, userID uuid.UUID) (bool, error)
+	GetLogin(ctx context.Context, userID uuid.UUID) (string, error)
+	HasScope(ctx context.Context, userID uuid.UUID, scope string) (bool, error)
+}
+
+type OfferRules struct {
+	MinAccountAgeSeconds int
+	RequireTwitchSender  bool
+	RequireFollow        bool
+	MinFollowAgeSeconds  int
+	RequireSubscription  bool
 }
 
 type PublicStreamer struct {
@@ -43,6 +72,8 @@ type PublicStreamer struct {
 	DisplayName     string
 	AvatarURL       string
 	AcceptingOffers bool
+	TwitchLogin     string
+	OfferRules      OfferRules
 }
 
 type StreamerListPage struct {
@@ -53,10 +84,27 @@ type StreamerListPage struct {
 type UserService struct {
 	users    ProfileUserRepository
 	settings SettingsRepository
+	twitch   TwitchLinkChecker
 }
 
-func NewUserService(users ProfileUserRepository, settings SettingsRepository) *UserService {
-	return &UserService{users: users, settings: settings}
+func NewUserService(users ProfileUserRepository, settings SettingsRepository, twitch TwitchLinkChecker) *UserService {
+	return &UserService{users: users, settings: settings, twitch: normalizeTwitchChecker(twitch)}
+}
+
+// normalizeTwitchChecker убирает typed-nil (*T)(nil) из интерфейса — иначе twitch != nil, но вызов паникует.
+func normalizeTwitchChecker(t TwitchLinkChecker) TwitchLinkChecker {
+	if t == nil {
+		return nil
+	}
+	v := reflect.ValueOf(t)
+	if v.Kind() == reflect.Pointer && v.IsNil() {
+		return nil
+	}
+	return t
+}
+
+func (s *UserService) twitchConfigured() bool {
+	return s.twitch != nil
 }
 
 func (s *UserService) UpdateProfile(ctx context.Context, userID uuid.UUID, in UpdateProfileInput) (domain.User, error) {
@@ -116,9 +164,17 @@ func (s *UserService) applyRoleChange(ctx context.Context, user *domain.User, ro
 		_, err := s.settings.GetByUserID(ctx, user.ID)
 		if errors.Is(err, domain.ErrNotFound) {
 			now := time.Now().UTC()
+			accepting := true
+			if s.twitchConfigured() {
+				linked, linkErr := s.twitch.HasLink(ctx, user.ID)
+				if linkErr != nil {
+					return fmt.Errorf("check twitch link: %w", linkErr)
+				}
+				accepting = linked
+			}
 			if err := s.settings.Create(ctx, domain.StreamerSettings{
 				UserID:          user.ID,
-				AcceptingOffers: true,
+				AcceptingOffers: accepting,
 				AllowAnonymous:  false,
 				MinAccountAge:   0,
 				CreatedAt:       now,
@@ -146,8 +202,14 @@ func (s *UserService) GetSettings(ctx context.Context, userID uuid.UUID) (domain
 }
 
 func (s *UserService) UpdateSettings(ctx context.Context, userID uuid.UUID, in UpdateSettingsInput) (domain.StreamerSettings, error) {
-	if in.AcceptingOffers == nil {
+	if in.empty() {
 		return domain.StreamerSettings{}, domain.ErrInvalidInput.WithCode("validation_error", "нет полей для обновления")
+	}
+	if err := validateNonNegativeSeconds(in.MinAccountAgeSeconds, "min_account_age_seconds"); err != nil {
+		return domain.StreamerSettings{}, err
+	}
+	if err := validateNonNegativeSeconds(in.MinFollowAgeSeconds, "min_follow_age_seconds"); err != nil {
+		return domain.StreamerSettings{}, err
 	}
 
 	user, err := s.users.GetByID(ctx, userID)
@@ -163,13 +225,83 @@ func (s *UserService) UpdateSettings(ctx context.Context, userID uuid.UUID, in U
 		return domain.StreamerSettings{}, err
 	}
 
-	settings.AcceptingOffers = *in.AcceptingOffers
+	if in.AcceptingOffers != nil {
+		settings.AcceptingOffers = *in.AcceptingOffers
+	}
+	if in.MinAccountAgeSeconds != nil {
+		settings.MinAccountAge = time.Duration(*in.MinAccountAgeSeconds) * time.Second
+	}
+	if in.RequireTwitchSender != nil {
+		settings.RequireTwitchSender = *in.RequireTwitchSender
+	}
+	if in.RequireFollow != nil {
+		settings.RequireFollow = *in.RequireFollow
+	}
+	if in.MinFollowAgeSeconds != nil {
+		settings.MinFollowAge = time.Duration(*in.MinFollowAgeSeconds) * time.Second
+	}
+	if in.RequireSubscription != nil {
+		settings.RequireSubscription = *in.RequireSubscription
+	}
+	settings.ApplyGateInvariants()
 	settings.UpdatedAt = time.Now().UTC()
+
+	if settings.AcceptingOffers && s.twitchConfigured() {
+		if err := s.requireStreamerTwitch(ctx, userID); err != nil {
+			return domain.StreamerSettings{}, err
+		}
+	}
+	if settings.TwitchGatesEnabled() {
+		if err := s.requireStreamerTwitch(ctx, userID); err != nil {
+			return domain.StreamerSettings{}, err
+		}
+	}
+	if settings.RequireSubscription {
+		if err := s.requireSubscriptionScope(ctx, userID); err != nil {
+			return domain.StreamerSettings{}, err
+		}
+	}
 
 	if err := s.settings.Update(ctx, settings); err != nil {
 		return domain.StreamerSettings{}, fmt.Errorf("update settings: %w", err)
 	}
 	return settings, nil
+}
+
+func validateNonNegativeSeconds(v *int, field string) error {
+	if v != nil && *v < 0 {
+		return domain.ErrInvalidInput.WithCode("validation_error", field+" не может быть отрицательным").
+			WithDetails(map[string]any{"field": field})
+	}
+	return nil
+}
+
+func (s *UserService) requireStreamerTwitch(ctx context.Context, userID uuid.UUID) error {
+	if !s.twitchConfigured() {
+		return domain.ErrConflict.WithCode("twitch_required", "привяжите Twitch, чтобы принимать офферы")
+	}
+	linked, err := s.twitch.HasLink(ctx, userID)
+	if err != nil {
+		return fmt.Errorf("check twitch link: %w", err)
+	}
+	if !linked {
+		return domain.ErrConflict.WithCode("twitch_required", "привяжите Twitch, чтобы принимать офферы")
+	}
+	return nil
+}
+
+func (s *UserService) requireSubscriptionScope(ctx context.Context, userID uuid.UUID) error {
+	if !s.twitchConfigured() {
+		return domain.ErrConflict.WithCode("twitch_required", "привяжите Twitch, чтобы принимать офферы")
+	}
+	ok, err := s.twitch.HasScope(ctx, userID, domain.TwitchScopeChannelSubscriptions)
+	if err != nil {
+		return fmt.Errorf("check twitch scope: %w", err)
+	}
+	if !ok {
+		return domain.ErrConflict.WithCode("twitch_scope_required", "перепривяжите Twitch с доступом к подпискам канала")
+	}
+	return nil
 }
 
 func (s *UserService) GetPublicStreamer(ctx context.Context, username string) (PublicStreamer, error) {
@@ -191,7 +323,18 @@ func (s *UserService) GetPublicStreamer(ctx context.Context, username string) (P
 		return PublicStreamer{}, fmt.Errorf("get streamer settings: %w", err)
 	}
 
-	return toPublicStreamer(user, settings.AcceptingOffers), nil
+	return toPublicStreamer(user, settings, s.twitchLogin(ctx, user.ID)), nil
+}
+
+func (s *UserService) twitchLogin(ctx context.Context, userID uuid.UUID) string {
+	if !s.twitchConfigured() {
+		return ""
+	}
+	login, err := s.twitch.GetLogin(ctx, userID)
+	if err != nil {
+		return ""
+	}
+	return login
 }
 
 func (s *UserService) ListStreamers(ctx context.Context, usernamePrefix, cursorRaw string, limit int) (StreamerListPage, error) {
@@ -226,18 +369,26 @@ func (s *UserService) ListStreamers(ctx context.Context, usernamePrefix, cursorR
 			})
 			break
 		}
-		page.Items = append(page.Items, toPublicStreamer(item.User, item.AcceptingOffers))
+		page.Items = append(page.Items, toPublicStreamer(item.User, domain.StreamerSettings{AcceptingOffers: item.AcceptingOffers}, s.twitchLogin(ctx, item.User.ID)))
 	}
 
 	return page, nil
 }
 
-func toPublicStreamer(u domain.User, accepting bool) PublicStreamer {
+func toPublicStreamer(u domain.User, settings domain.StreamerSettings, twitchLogin string) PublicStreamer {
 	return PublicStreamer{
 		Username:        u.Username,
 		DisplayName:     u.DisplayName,
 		AvatarURL:       u.AvatarURL,
-		AcceptingOffers: accepting,
+		AcceptingOffers: settings.AcceptingOffers,
+		TwitchLogin:     twitchLogin,
+		OfferRules: OfferRules{
+			MinAccountAgeSeconds: int(settings.MinAccountAge / time.Second),
+			RequireTwitchSender:  settings.RequireTwitchSender,
+			RequireFollow:        settings.RequireFollow,
+			MinFollowAgeSeconds:  int(settings.MinFollowAge / time.Second),
+			RequireSubscription:  settings.RequireSubscription,
+		},
 	}
 }
 

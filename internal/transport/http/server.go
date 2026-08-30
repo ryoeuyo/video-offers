@@ -17,6 +17,7 @@ import (
 	"github.com/ruslan/video-offers/internal/domain"
 	jwtpkg "github.com/ruslan/video-offers/internal/pkg/jwt"
 	"github.com/ruslan/video-offers/internal/service"
+	twitchsvc "github.com/ruslan/video-offers/internal/service/twitch"
 )
 
 type Server struct {
@@ -31,6 +32,7 @@ type Deps struct {
 	Auth   *service.AuthService
 	Users  *service.UserService
 	Offers *service.OfferService
+	Twitch *twitchsvc.LinkService
 	JWT    *jwtpkg.Service
 }
 
@@ -70,6 +72,7 @@ func (s *Server) routes(deps Deps) {
 	meH := NewMeHandlers(deps.Users)
 	streamerH := NewStreamerHandlers(deps.Users)
 	offerH := NewOfferHandlers(deps.Offers)
+	twitchH := NewTwitchHandlers(deps.Twitch)
 	requireAuth := RequireAuth(deps.JWT)
 	requireStreamer := RequireStreamer()
 
@@ -81,6 +84,10 @@ func (s *Server) routes(deps Deps) {
 	auth.Post("/login", authH.Login)
 	auth.Post("/refresh", authH.Refresh)
 	auth.Post("/logout", requireAuth, authH.Logout)
+	if deps.Twitch != nil {
+		auth.Get("/twitch/connect", requireAuth, twitchH.Connect)
+		auth.Get("/twitch/callback", twitchH.Callback)
+	}
 
 	streamers := v1.Group("/streamers")
 	streamers.Get("/", streamerH.List)
@@ -97,6 +104,10 @@ func (s *Server) routes(deps Deps) {
 	me.Delete("/offers/:id", requireStreamer, offerH.Delete)
 	me.Get("/sent", offerH.ListSent)
 	me.Delete("/sent/:id", offerH.RevokeSent)
+	if deps.Twitch != nil {
+		me.Get("/twitch", twitchH.GetLink)
+		me.Delete("/twitch", twitchH.Unlink)
+	}
 }
 
 func (s *Server) Start() error {

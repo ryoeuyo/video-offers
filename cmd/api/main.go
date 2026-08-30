@@ -18,6 +18,7 @@ import (
 	"github.com/ruslan/video-offers/internal/pkg/logger"
 	"github.com/ruslan/video-offers/internal/repo"
 	"github.com/ruslan/video-offers/internal/service"
+	twitchsvc "github.com/ruslan/video-offers/internal/service/twitch"
 	"github.com/ruslan/video-offers/internal/service/video"
 	httpapi "github.com/ruslan/video-offers/internal/transport/http"
 )
@@ -57,18 +58,46 @@ func run() error {
 	settingsRepo := repo.NewStreamerSettingsRepo(pool)
 	jwtSvc := jwt.New(cfg.Auth.JWTSecret, cfg.Auth.AccessTTL)
 	authSvc := service.NewAuthService(userRepo, refreshRepo, jwtSvc, cfg.Auth.RefreshTTL)
-	userSvc := service.NewUserService(userRepo, settingsRepo)
 	offerRepo := repo.NewOfferRepo(pool)
+	twitchRepo := repo.NewTwitchLinkRepo(pool)
+
+	var twitchChecker service.TwitchLinkChecker
+	if cfg.TwitchEnabled() {
+		oauthClient := twitchsvc.NewOAuthClient(
+			cfg.Twitch.ClientID,
+			cfg.Twitch.ClientSecret,
+			cfg.Twitch.RedirectURI,
+			&http.Client{Timeout: 10 * time.Second},
+		)
+		twitchChecker = twitchsvc.NewLinkService(
+			twitchRepo,
+			settingsRepo,
+			userRepo,
+			oauthClient,
+			cfg.TwitchSealKey(),
+			cfg.Twitch.FrontendSuccessURL,
+			true,
+		)
+		log.Info("twitch integration enabled")
+	} else {
+		log.Info("twitch integration disabled")
+	}
 
 	httpClient := &http.Client{Timeout: 5 * time.Second}
 	videoResolver := video.NewCompositeResolver(video.NewYouTubeResolver(httpClient))
-	offerSvc := service.NewOfferService(offerRepo, userRepo, settingsRepo, videoResolver)
+	var offerGates service.OfferTwitchGate
+	if svc := twitchAsLinkService(twitchChecker); svc != nil {
+		offerGates = svc
+	}
+	offerSvc := service.NewOfferService(offerRepo, userRepo, settingsRepo, videoResolver, offerGates)
+	userSvc := service.NewUserService(userRepo, settingsRepo, twitchChecker)
 
 	srv := httpapi.NewServer(cfg, log, httpapi.Deps{
 		Pool:   pool,
 		Auth:   authSvc,
 		Users:  userSvc,
 		Offers: offerSvc,
+		Twitch: twitchAsLinkService(twitchChecker),
 		JWT:    jwtSvc,
 	})
 
@@ -99,4 +128,16 @@ func run() error {
 
 	log.Info("stopped cleanly")
 	return nil
+}
+
+// twitchAsLinkService извлекает *LinkService из интерфейса для HTTP-handlers.
+func twitchAsLinkService(checker service.TwitchLinkChecker) *twitchsvc.LinkService {
+	if checker == nil {
+		return nil
+	}
+	svc, ok := checker.(*twitchsvc.LinkService)
+	if !ok || svc == nil {
+		return nil
+	}
+	return svc
 }

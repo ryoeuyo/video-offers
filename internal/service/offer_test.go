@@ -154,6 +154,15 @@ func (f *fakeOfferStreamerRepo) GetByUsername(_ context.Context, username string
 	return u, nil
 }
 
+func (f *fakeOfferStreamerRepo) GetByID(_ context.Context, id uuid.UUID) (domain.User, error) {
+	for _, u := range f.users {
+		if u.ID == id {
+			return u, nil
+		}
+	}
+	return domain.User{}, domain.ErrNotFound
+}
+
 type fakeOfferSettingsRepo struct {
 	settings map[uuid.UUID]domain.StreamerSettings
 }
@@ -201,7 +210,7 @@ func TestOfferService_Create_Success(t *testing.T) {
 		Title: "Cool Video", ThumbnailURL: "https://img.example/thumb.jpg",
 	}}
 
-	svc := NewOfferService(offers, streamers, settings, resolver)
+	svc := NewOfferService(offers, streamers, settings, resolver, nil)
 	offer, err := svc.Create(context.Background(), "alice", senderID, CreateOfferInput{
 		URL:     "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
 		Comment: "check this",
@@ -232,7 +241,7 @@ func TestOfferService_Create_Duplicate(t *testing.T) {
 		streamerID: {UserID: streamerID, AcceptingOffers: true, CreatedAt: now, UpdatedAt: now},
 	}}
 	offers := &fakeOfferRepo{}
-	svc := NewOfferService(offers, streamers, settings, &fakeVideoResolver{})
+	svc := NewOfferService(offers, streamers, settings, &fakeVideoResolver{}, nil)
 
 	url := "https://youtu.be/dQw4w9WgXcQ"
 	if _, err := svc.Create(context.Background(), "alice", senderID, CreateOfferInput{URL: url}); err != nil {
@@ -254,7 +263,7 @@ func TestOfferService_Create_OffersDisabled(t *testing.T) {
 	settings := &fakeOfferSettingsRepo{settings: map[uuid.UUID]domain.StreamerSettings{
 		streamerID: {UserID: streamerID, AcceptingOffers: false, CreatedAt: now, UpdatedAt: now},
 	}}
-	svc := NewOfferService(&fakeOfferRepo{}, streamers, settings, &fakeVideoResolver{})
+	svc := NewOfferService(&fakeOfferRepo{}, streamers, settings, &fakeVideoResolver{}, nil)
 
 	_, err := svc.Create(context.Background(), "alice", uuid.Must(uuid.NewV7()), CreateOfferInput{
 		URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
@@ -272,7 +281,7 @@ func TestOfferService_Create_ResolverFailureStillCreates(t *testing.T) {
 	settings := &fakeOfferSettingsRepo{settings: map[uuid.UUID]domain.StreamerSettings{
 		streamerID: {UserID: streamerID, AcceptingOffers: true, CreatedAt: now, UpdatedAt: now},
 	}}
-	svc := NewOfferService(&fakeOfferRepo{}, streamers, settings, &fakeVideoResolver{err: context.DeadlineExceeded})
+	svc := NewOfferService(&fakeOfferRepo{}, streamers, settings, &fakeVideoResolver{err: context.DeadlineExceeded}, nil)
 
 	offer, err := svc.Create(context.Background(), "alice", uuid.Must(uuid.NewV7()), CreateOfferInput{
 		URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
@@ -290,7 +299,7 @@ func TestOfferService_Create_ResolverFailureStillCreates(t *testing.T) {
 }
 
 func TestOfferService_Create_StreamerNotFound(t *testing.T) {
-	svc := NewOfferService(&fakeOfferRepo{}, &fakeOfferStreamerRepo{users: map[string]domain.User{}}, &fakeOfferSettingsRepo{settings: map[uuid.UUID]domain.StreamerSettings{}}, nil)
+	svc := NewOfferService(&fakeOfferRepo{}, &fakeOfferStreamerRepo{users: map[string]domain.User{}}, &fakeOfferSettingsRepo{settings: map[uuid.UUID]domain.StreamerSettings{}}, nil, nil)
 	_, err := svc.Create(context.Background(), "ghost", uuid.Must(uuid.NewV7()), CreateOfferInput{
 		URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
 	})
@@ -304,7 +313,7 @@ func TestOfferService_UpdateStatus(t *testing.T) {
 		ID: offerID, StreamerID: streamerID, Status: domain.StatusPending,
 		CreatedAt: time.Now().UTC(),
 	}}}
-	svc := NewOfferService(offers, nil, nil, nil)
+	svc := NewOfferService(offers, nil, nil, nil, nil)
 
 	got, err := svc.UpdateStatus(context.Background(), streamerID, offerID, domain.StatusWatched)
 	if err != nil {
@@ -326,7 +335,7 @@ func TestOfferService_UpdateStatus_Forbidden(t *testing.T) {
 		ID: offerID, StreamerID: streamerID, Status: domain.StatusPending,
 		CreatedAt: time.Now().UTC(),
 	}}}
-	svc := NewOfferService(offers, nil, nil, nil)
+	svc := NewOfferService(offers, nil, nil, nil, nil)
 
 	_, err := svc.UpdateStatus(context.Background(), otherID, offerID, domain.StatusWatched)
 	assertErrorKind(t, err, domain.KindNotFound)
@@ -338,7 +347,7 @@ func TestOfferService_ListQueue_FilterStatus(t *testing.T) {
 		{ID: uuid.Must(uuid.NewV7()), StreamerID: streamerID, Status: domain.StatusPending, CreatedAt: time.Now().UTC()},
 		{ID: uuid.Must(uuid.NewV7()), StreamerID: streamerID, Status: domain.StatusWatched, CreatedAt: time.Now().UTC()},
 	}}
-	svc := NewOfferService(offers, nil, nil, nil)
+	svc := NewOfferService(offers, nil, nil, nil, nil)
 
 	page, err := svc.ListQueue(context.Background(), streamerID, "pending", "", 20)
 	if err != nil {
@@ -355,7 +364,7 @@ func TestOfferService_RevokeSent(t *testing.T) {
 	offers := &fakeOfferRepo{offers: []domain.Offer{{
 		ID: offerID, SenderID: &senderID, Status: domain.StatusPending, CreatedAt: time.Now().UTC(),
 	}}}
-	svc := NewOfferService(offers, nil, nil, nil)
+	svc := NewOfferService(offers, nil, nil, nil, nil)
 
 	if err := svc.RevokeSent(context.Background(), senderID, offerID); err != nil {
 		t.Fatalf("RevokeSent: %v", err)
@@ -371,7 +380,7 @@ func TestOfferService_RevokeSent_NotPending(t *testing.T) {
 	offers := &fakeOfferRepo{offers: []domain.Offer{{
 		ID: offerID, SenderID: &senderID, Status: domain.StatusWatched, CreatedAt: time.Now().UTC(),
 	}}}
-	svc := NewOfferService(offers, nil, nil, nil)
+	svc := NewOfferService(offers, nil, nil, nil, nil)
 
 	err := svc.RevokeSent(context.Background(), senderID, offerID)
 	assertDomainCode(t, err, "offer_not_pending")
@@ -383,7 +392,7 @@ func TestOfferService_DeleteByStreamer(t *testing.T) {
 	offers := &fakeOfferRepo{offers: []domain.Offer{{
 		ID: offerID, StreamerID: streamerID, Status: domain.StatusWatched, CreatedAt: time.Now().UTC(),
 	}}}
-	svc := NewOfferService(offers, nil, nil, nil)
+	svc := NewOfferService(offers, nil, nil, nil, nil)
 
 	if err := svc.DeleteByStreamer(context.Background(), streamerID, offerID); err != nil {
 		t.Fatalf("DeleteByStreamer: %v", err)
@@ -403,7 +412,7 @@ func TestOfferService_ListSent_EnrichesMissingTitle(t *testing.T) {
 		CreatedAt: time.Now().UTC(),
 	}}}
 	resolver := &fakeVideoResolver{meta: domain.VideoMeta{Title: "Never Gonna Give You Up"}}
-	svc := NewOfferService(offers, nil, nil, resolver)
+	svc := NewOfferService(offers, nil, nil, resolver, nil)
 
 	page, err := svc.ListSent(context.Background(), senderID, "", 20)
 	if err != nil {
@@ -415,4 +424,104 @@ func TestOfferService_ListSent_EnrichesMissingTitle(t *testing.T) {
 	if page.Items[0].Title != "Never Gonna Give You Up" {
 		t.Errorf("title = %q", page.Items[0].Title)
 	}
+}
+
+type fakeOfferGates struct {
+	err error
+}
+
+func (f *fakeOfferGates) CheckOfferGates(_ context.Context, _, _ uuid.UUID, _ domain.StreamerSettings) error {
+	return f.err
+}
+
+func TestOfferService_Create_AccountTooNew(t *testing.T) {
+	streamerID := uuid.Must(uuid.NewV7())
+	senderID := uuid.Must(uuid.NewV7())
+	now := time.Now().UTC()
+
+	streamers := &fakeOfferStreamerRepo{users: map[string]domain.User{
+		"alice": {ID: streamerID, Username: "alice", Role: domain.RoleStreamer, CreatedAt: now.Add(-time.Hour)},
+		"bob":   {ID: senderID, Username: "bob", Role: domain.RoleViewer, CreatedAt: now.Add(-time.Hour)},
+	}}
+	settings := &fakeOfferSettingsRepo{settings: map[uuid.UUID]domain.StreamerSettings{
+		streamerID: {UserID: streamerID, AcceptingOffers: true, MinAccountAge: 48 * time.Hour, CreatedAt: now, UpdatedAt: now},
+	}}
+	svc := NewOfferService(&fakeOfferRepo{}, streamers, settings, &fakeVideoResolver{}, nil)
+
+	_, err := svc.Create(context.Background(), "alice", senderID, CreateOfferInput{
+		URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+	})
+	assertDomainCode(t, err, "account_too_new")
+}
+
+func TestOfferService_Create_AccountAgeOk(t *testing.T) {
+	streamerID := uuid.Must(uuid.NewV7())
+	senderID := uuid.Must(uuid.NewV7())
+	now := time.Now().UTC()
+
+	streamers := &fakeOfferStreamerRepo{users: map[string]domain.User{
+		"alice": {ID: streamerID, Username: "alice", Role: domain.RoleStreamer},
+		"bob":   {ID: senderID, Username: "bob", Role: domain.RoleViewer, CreatedAt: now.Add(-72 * time.Hour)},
+	}}
+	settings := &fakeOfferSettingsRepo{settings: map[uuid.UUID]domain.StreamerSettings{
+		streamerID: {UserID: streamerID, AcceptingOffers: true, MinAccountAge: 48 * time.Hour, CreatedAt: now, UpdatedAt: now},
+	}}
+	svc := NewOfferService(&fakeOfferRepo{}, streamers, settings, &fakeVideoResolver{}, nil)
+
+	if _, err := svc.Create(context.Background(), "alice", senderID, CreateOfferInput{
+		URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+	}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+}
+
+func TestOfferService_Create_TwitchGateCodes(t *testing.T) {
+	streamerID := uuid.Must(uuid.NewV7())
+	senderID := uuid.Must(uuid.NewV7())
+	now := time.Now().UTC()
+	streamers := &fakeOfferStreamerRepo{users: map[string]domain.User{
+		"alice": {ID: streamerID, Username: "alice", Role: domain.RoleStreamer},
+	}}
+	settings := &fakeOfferSettingsRepo{settings: map[uuid.UUID]domain.StreamerSettings{
+		streamerID: {
+			UserID: streamerID, AcceptingOffers: true, RequireTwitchSender: true,
+			CreatedAt: now, UpdatedAt: now,
+		},
+	}}
+
+	cases := []struct {
+		code string
+		err  error
+	}{
+		{"twitch_not_linked", domain.ErrForbidden.WithCode("twitch_not_linked", "no")},
+		{"twitch_not_following", domain.ErrForbidden.WithCode("twitch_not_following", "no")},
+		{"twitch_follow_too_new", domain.ErrForbidden.WithCode("twitch_follow_too_new", "no")},
+		{"twitch_subscription_required", domain.ErrForbidden.WithCode("twitch_subscription_required", "no")},
+		{"twitch_unavailable", domain.ErrUnavailable.WithCode("twitch_unavailable", "down")},
+	}
+	for _, tc := range cases {
+		t.Run(tc.code, func(t *testing.T) {
+			svc := NewOfferService(&fakeOfferRepo{}, streamers, settings, &fakeVideoResolver{}, &fakeOfferGates{err: tc.err})
+			_, err := svc.Create(context.Background(), "alice", senderID, CreateOfferInput{
+				URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+			})
+			assertDomainCode(t, err, tc.code)
+		})
+	}
+}
+
+func TestOfferService_Create_TwitchGatesNilFailClosed(t *testing.T) {
+	streamerID := uuid.Must(uuid.NewV7())
+	now := time.Now().UTC()
+	streamers := &fakeOfferStreamerRepo{users: map[string]domain.User{
+		"alice": {ID: streamerID, Username: "alice", Role: domain.RoleStreamer},
+	}}
+	settings := &fakeOfferSettingsRepo{settings: map[uuid.UUID]domain.StreamerSettings{
+		streamerID: {UserID: streamerID, AcceptingOffers: true, RequireFollow: true, CreatedAt: now, UpdatedAt: now},
+	}}
+	svc := NewOfferService(&fakeOfferRepo{}, streamers, settings, &fakeVideoResolver{}, nil)
+	_, err := svc.Create(context.Background(), "alice", uuid.Must(uuid.NewV7()), CreateOfferInput{
+		URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+	})
+	assertDomainCode(t, err, "twitch_unavailable")
 }

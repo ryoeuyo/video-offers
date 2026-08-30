@@ -32,12 +32,34 @@ export interface StreamerPublic {
   display_name: string
   avatar_url: string
   accepting_offers: boolean
+  twitch_login?: string
+  offer_rules: OfferRules
+}
+
+export interface OfferRules {
+  min_account_age_seconds: number
+  require_twitch_sender: boolean
+  require_follow: boolean
+  min_follow_age_seconds: number
+  require_subscription: boolean
+}
+
+export interface TwitchLink {
+  linked: boolean
+  login?: string
+  display_name?: string
+  linked_at?: string
+  has_subscription_scope?: boolean
 }
 
 export interface StreamerSettings {
   accepting_offers: boolean
   allow_anonymous: boolean
   min_account_age_seconds: number
+  require_twitch_sender: boolean
+  require_follow: boolean
+  min_follow_age_seconds: number
+  require_subscription: boolean
 }
 
 export interface Offer {

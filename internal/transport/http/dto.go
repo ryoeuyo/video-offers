@@ -52,17 +52,36 @@ type settingsResponse struct {
 	AcceptingOffers      bool `json:"accepting_offers"`
 	AllowAnonymous       bool `json:"allow_anonymous"`
 	MinAccountAgeSeconds int  `json:"min_account_age_seconds"`
+	RequireTwitchSender  bool `json:"require_twitch_sender"`
+	RequireFollow        bool `json:"require_follow"`
+	MinFollowAgeSeconds  int  `json:"min_follow_age_seconds"`
+	RequireSubscription  bool `json:"require_subscription"`
 }
 
 type updateSettingsRequest struct {
-	AcceptingOffers *bool `json:"accepting_offers"`
+	AcceptingOffers      *bool `json:"accepting_offers"`
+	MinAccountAgeSeconds *int  `json:"min_account_age_seconds"`
+	RequireTwitchSender  *bool `json:"require_twitch_sender"`
+	RequireFollow        *bool `json:"require_follow"`
+	MinFollowAgeSeconds  *int  `json:"min_follow_age_seconds"`
+	RequireSubscription  *bool `json:"require_subscription"`
+}
+
+type offerRulesResponse struct {
+	MinAccountAgeSeconds int  `json:"min_account_age_seconds"`
+	RequireTwitchSender  bool `json:"require_twitch_sender"`
+	RequireFollow        bool `json:"require_follow"`
+	MinFollowAgeSeconds  int  `json:"min_follow_age_seconds"`
+	RequireSubscription  bool `json:"require_subscription"`
 }
 
 type streamerPublicResponse struct {
-	Username        string `json:"username"`
-	DisplayName     string `json:"display_name"`
-	AvatarURL       string `json:"avatar_url"`
-	AcceptingOffers bool   `json:"accepting_offers"`
+	Username        string             `json:"username"`
+	DisplayName     string             `json:"display_name"`
+	AvatarURL       string             `json:"avatar_url"`
+	AcceptingOffers bool               `json:"accepting_offers"`
+	TwitchLogin     string             `json:"twitch_login,omitempty"`
+	OfferRules      offerRulesResponse `json:"offer_rules"`
 }
 
 type listResponse[T any] struct {
@@ -137,6 +156,10 @@ func toSettingsResponse(s domain.StreamerSettings) settingsResponse {
 		AcceptingOffers:      s.AcceptingOffers,
 		AllowAnonymous:       s.AllowAnonymous,
 		MinAccountAgeSeconds: int(s.MinAccountAge / time.Second),
+		RequireTwitchSender:  s.RequireTwitchSender,
+		RequireFollow:        s.RequireFollow,
+		MinFollowAgeSeconds:  int(s.MinFollowAge / time.Second),
+		RequireSubscription:  s.RequireSubscription,
 	}
 }
 
@@ -146,6 +169,14 @@ func toStreamerPublicResponse(s service.PublicStreamer) streamerPublicResponse {
 		DisplayName:     s.DisplayName,
 		AvatarURL:       s.AvatarURL,
 		AcceptingOffers: s.AcceptingOffers,
+		TwitchLogin:     s.TwitchLogin,
+		OfferRules: offerRulesResponse{
+			MinAccountAgeSeconds: s.OfferRules.MinAccountAgeSeconds,
+			RequireTwitchSender:  s.OfferRules.RequireTwitchSender,
+			RequireFollow:        s.OfferRules.RequireFollow,
+			MinFollowAgeSeconds:  s.OfferRules.MinFollowAgeSeconds,
+			RequireSubscription:  s.OfferRules.RequireSubscription,
+		},
 	}
 }
 

@@ -118,7 +118,7 @@ func testUser(role domain.Role) domain.User {
 func TestUpdateProfile_BecomeStreamerCreatesSettings(t *testing.T) {
 	users := newFakeProfileUserRepo()
 	settings := newFakeSettingsRepo()
-	svc := NewUserService(users, settings)
+	svc := NewUserService(users, settings, nil)
 	ctx := context.Background()
 
 	user := testUser(domain.RoleViewer)
@@ -145,7 +145,7 @@ func TestUpdateProfile_BecomeStreamerCreatesSettings(t *testing.T) {
 func TestUpdateProfile_DisplayNameAndAvatar(t *testing.T) {
 	users := newFakeProfileUserRepo()
 	settings := newFakeSettingsRepo()
-	svc := NewUserService(users, settings)
+	svc := NewUserService(users, settings, nil)
 	ctx := context.Background()
 
 	user := testUser(domain.RoleViewer)
@@ -168,7 +168,7 @@ func TestUpdateProfile_DisplayNameAndAvatar(t *testing.T) {
 func TestUpdateProfile_ValidationErrors(t *testing.T) {
 	users := newFakeProfileUserRepo()
 	settings := newFakeSettingsRepo()
-	svc := NewUserService(users, settings)
+	svc := NewUserService(users, settings, nil)
 	ctx := context.Background()
 
 	user := testUser(domain.RoleViewer)
@@ -193,7 +193,7 @@ func TestUpdateProfile_ValidationErrors(t *testing.T) {
 func TestUpdateSettings_AcceptingOffers(t *testing.T) {
 	users := newFakeProfileUserRepo()
 	settings := newFakeSettingsRepo()
-	svc := NewUserService(users, settings)
+	svc := NewUserService(users, settings, nil)
 	ctx := context.Background()
 
 	user := testUser(domain.RoleStreamer)
@@ -213,10 +213,56 @@ func TestUpdateSettings_AcceptingOffers(t *testing.T) {
 	}
 }
 
+type fakeTwitchChecker struct {
+	linked bool
+	scopes []string
+}
+
+func (f *fakeTwitchChecker) HasLink(_ context.Context, _ uuid.UUID) (bool, error) {
+	return f.linked, nil
+}
+
+func (f *fakeTwitchChecker) GetLogin(_ context.Context, _ uuid.UUID) (string, error) {
+	if !f.linked {
+		return "", nil
+	}
+	return "coolstreamer", nil
+}
+
+func (f *fakeTwitchChecker) HasScope(_ context.Context, _ uuid.UUID, scope string) (bool, error) {
+	if !f.linked {
+		return false, nil
+	}
+	for _, s := range f.scopes {
+		if s == scope {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func TestUpdateSettings_TwitchRequiredToAccept(t *testing.T) {
+	users := newFakeProfileUserRepo()
+	settings := newFakeSettingsRepo()
+	svc := NewUserService(users, settings, &fakeTwitchChecker{linked: false})
+	ctx := context.Background()
+
+	user := testUser(domain.RoleStreamer)
+	users.seed(user)
+	now := time.Now().UTC()
+	settings.byUser[user.ID] = domain.StreamerSettings{
+		UserID: user.ID, AcceptingOffers: false, CreatedAt: now, UpdatedAt: now,
+	}
+
+	on := true
+	_, err := svc.UpdateSettings(ctx, user.ID, UpdateSettingsInput{AcceptingOffers: &on})
+	assertDomainCode(t, err, "twitch_required")
+}
+
 func TestUpdateSettings_RequiresStreamer(t *testing.T) {
 	users := newFakeProfileUserRepo()
 	settings := newFakeSettingsRepo()
-	svc := NewUserService(users, settings)
+	svc := NewUserService(users, settings, nil)
 	ctx := context.Background()
 
 	user := testUser(domain.RoleViewer)
@@ -228,10 +274,93 @@ func TestUpdateSettings_RequiresStreamer(t *testing.T) {
 	assertErrorKind(t, err, domain.KindForbidden)
 }
 
+func TestUpdateSettings_ImplicitFollowFromAge(t *testing.T) {
+	users := newFakeProfileUserRepo()
+	settings := newFakeSettingsRepo()
+	svc := NewUserService(users, settings, &fakeTwitchChecker{
+		linked: true,
+		scopes: []string{domain.TwitchScopeChannelSubscriptions},
+	})
+	ctx := context.Background()
+
+	user := testUser(domain.RoleStreamer)
+	users.seed(user)
+	now := time.Now().UTC()
+	settings.byUser[user.ID] = domain.StreamerSettings{
+		UserID: user.ID, AcceptingOffers: true, CreatedAt: now, UpdatedAt: now,
+	}
+
+	age := 86400
+	got, err := svc.UpdateSettings(ctx, user.ID, UpdateSettingsInput{MinFollowAgeSeconds: &age})
+	if err != nil {
+		t.Fatalf("UpdateSettings: %v", err)
+	}
+	if !got.RequireFollow || !got.RequireTwitchSender {
+		t.Errorf("invariants not applied: %+v", got)
+	}
+	if got.MinFollowAge != 24*time.Hour {
+		t.Errorf("min follow age = %s", got.MinFollowAge)
+	}
+}
+
+func TestUpdateSettings_FollowRequiresTwitch(t *testing.T) {
+	users := newFakeProfileUserRepo()
+	settings := newFakeSettingsRepo()
+	svc := NewUserService(users, settings, &fakeTwitchChecker{linked: false})
+	ctx := context.Background()
+
+	user := testUser(domain.RoleStreamer)
+	users.seed(user)
+	now := time.Now().UTC()
+	settings.byUser[user.ID] = domain.StreamerSettings{
+		UserID: user.ID, AcceptingOffers: false, CreatedAt: now, UpdatedAt: now,
+	}
+
+	on := true
+	_, err := svc.UpdateSettings(ctx, user.ID, UpdateSettingsInput{RequireFollow: &on})
+	assertDomainCode(t, err, "twitch_required")
+}
+
+func TestUpdateSettings_SubscriptionRequiresScope(t *testing.T) {
+	users := newFakeProfileUserRepo()
+	settings := newFakeSettingsRepo()
+	svc := NewUserService(users, settings, &fakeTwitchChecker{linked: true})
+	ctx := context.Background()
+
+	user := testUser(domain.RoleStreamer)
+	users.seed(user)
+	now := time.Now().UTC()
+	settings.byUser[user.ID] = domain.StreamerSettings{
+		UserID: user.ID, AcceptingOffers: true, CreatedAt: now, UpdatedAt: now,
+	}
+
+	on := true
+	_, err := svc.UpdateSettings(ctx, user.ID, UpdateSettingsInput{RequireSubscription: &on})
+	assertDomainCode(t, err, "twitch_scope_required")
+}
+
+func TestUpdateSettings_NegativeAgeRejected(t *testing.T) {
+	users := newFakeProfileUserRepo()
+	settings := newFakeSettingsRepo()
+	svc := NewUserService(users, settings, nil)
+	ctx := context.Background()
+
+	user := testUser(domain.RoleStreamer)
+	users.seed(user)
+	now := time.Now().UTC()
+	settings.byUser[user.ID] = domain.StreamerSettings{
+		UserID: user.ID, AcceptingOffers: true, CreatedAt: now, UpdatedAt: now,
+	}
+
+	neg := -1
+	_, err := svc.UpdateSettings(ctx, user.ID, UpdateSettingsInput{MinAccountAgeSeconds: &neg})
+	assertDomainCode(t, err, "validation_error")
+}
+
 func TestGetPublicStreamer(t *testing.T) {
 	users := newFakeProfileUserRepo()
 	settings := newFakeSettingsRepo()
-	svc := NewUserService(users, settings)
+	svc := NewUserService(users, settings, nil)
 	ctx := context.Background()
 
 	streamer := testUser(domain.RoleStreamer)
@@ -261,7 +390,7 @@ func TestGetPublicStreamer(t *testing.T) {
 func TestListStreamers_Pagination(t *testing.T) {
 	users := newFakeProfileUserRepo()
 	settings := newFakeSettingsRepo()
-	svc := NewUserService(users, settings)
+	svc := NewUserService(users, settings, nil)
 	ctx := context.Background()
 
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -297,9 +426,51 @@ func TestListStreamers_Pagination(t *testing.T) {
 }
 
 func TestListStreamers_InvalidCursor(t *testing.T) {
-	svc := NewUserService(newFakeProfileUserRepo(), newFakeSettingsRepo())
+	svc := NewUserService(newFakeProfileUserRepo(), newFakeSettingsRepo(), nil)
 	_, err := svc.ListStreamers(context.Background(), "", "bad-cursor", 20)
 	assertDomainCode(t, err, "invalid_cursor")
+}
+
+type typedNilTwitchChecker struct{}
+
+func (t *typedNilTwitchChecker) HasLink(_ context.Context, _ uuid.UUID) (bool, error) {
+	panic("should not call on typed nil twitch checker")
+}
+
+func (t *typedNilTwitchChecker) GetLogin(_ context.Context, _ uuid.UUID) (string, error) {
+	panic("should not call on typed nil twitch checker")
+}
+
+func (t *typedNilTwitchChecker) HasScope(_ context.Context, _ uuid.UUID, _ string) (bool, error) {
+	panic("should not call on typed nil twitch checker")
+}
+
+func TestListStreamers_TypedNilTwitchCheckerDoesNotPanic(t *testing.T) {
+	var p *typedNilTwitchChecker
+	var checker TwitchLinkChecker = p
+
+	users := newFakeProfileUserRepo()
+	settings := newFakeSettingsRepo()
+	svc := NewUserService(users, settings, checker)
+	ctx := context.Background()
+
+	streamer := testUser(domain.RoleStreamer)
+	streamer.Username = "typednil"
+	users.seed(streamer)
+	users.streamers = append(users.streamers, repo.StreamerListItem{
+		User: streamer, AcceptingOffers: true,
+	})
+
+	page, err := svc.ListStreamers(ctx, "", "", 20)
+	if err != nil {
+		t.Fatalf("ListStreamers: %v", err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(page.Items))
+	}
+	if page.Items[0].TwitchLogin != "" {
+		t.Errorf("twitch_login = %q, want empty", page.Items[0].TwitchLogin)
+	}
 }
 
 func TestPaginationEncodeDecodeUsedInList(t *testing.T) {

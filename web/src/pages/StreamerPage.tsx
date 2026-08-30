@@ -1,7 +1,7 @@
 import { type FormEvent, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { api } from '../api/client'
-import type { StreamerPublic } from '../api/types'
+import { api, ApiClientError } from '../api/client'
+import type { OfferRules, StreamerPublic } from '../api/types'
 import { useAuth } from '../context/AuthContext'
 import styles from './StreamerPage.module.css'
 
@@ -17,6 +17,7 @@ export function StreamerPage() {
   const [submitting, setSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
   const [formError, setFormError] = useState('')
+  const [formErrorCode, setFormErrorCode] = useState('')
 
   useEffect(() => {
     if (!username) return
@@ -32,6 +33,7 @@ export function StreamerPage() {
     e.preventDefault()
     if (!username) return
     setFormError('')
+    setFormErrorCode('')
     setSuccess(false)
     setSubmitting(true)
     try {
@@ -40,7 +42,13 @@ export function StreamerPage() {
       setComment('')
       setSuccess(true)
     } catch (err) {
-      setFormError(err instanceof Error ? err.message : 'Не удалось отправить')
+      if (err instanceof ApiClientError) {
+        setFormError(err.message)
+        setFormErrorCode(err.code)
+      } else {
+        setFormError(err instanceof Error ? err.message : 'Не удалось отправить')
+        setFormErrorCode('')
+      }
     } finally {
       setSubmitting(false)
     }
@@ -71,7 +79,21 @@ export function StreamerPage() {
         </div>
         <div>
           <h1>{display}</h1>
-          <p className={styles.username}>@{streamer.username}</p>
+          <p className={styles.username}>
+            @{streamer.username}
+            {streamer.twitch_login && (
+              <>
+                {' · '}
+                <a
+                  href={`https://twitch.tv/${streamer.twitch_login}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  twitch.tv/{streamer.twitch_login}
+                </a>
+              </>
+            )}
+          </p>
           <span
             className={`${styles.badge} ${streamer.accepting_offers ? styles.open : styles.closed}`}
           >
@@ -99,6 +121,12 @@ export function StreamerPage() {
       ) : (
         <form onSubmit={handleSubmit} className={styles.form}>
           <h2>Предложить видео</h2>
+          <OfferRulesList rules={streamer.offer_rules} />
+          {formErrorCode === 'twitch_not_linked' && (
+            <div className="alert warn">
+              <Link to="/settings">Привяжите Twitch</Link>, чтобы отправлять офферы этому стримеру.
+            </div>
+          )}
 
           <label>
             Ссылка на видео
@@ -136,5 +164,27 @@ export function StreamerPage() {
         </form>
       )}
     </div>
+  )
+}
+
+function OfferRulesList({ rules }: { rules?: OfferRules }) {
+  if (!rules) return null
+  const items: string[] = []
+  if (rules.min_account_age_seconds > 0) {
+    items.push(`Аккаунт OfferBox старше ${Math.round(rules.min_account_age_seconds / 86400)} дн.`)
+  }
+  if (rules.require_twitch_sender) items.push('Привязанный Twitch')
+  if (rules.require_follow) items.push('Фоллов на канал')
+  if (rules.min_follow_age_seconds > 0) {
+    items.push(`Фоллов старше ${Math.round(rules.min_follow_age_seconds / 86400)} дн.`)
+  }
+  if (rules.require_subscription) items.push('Подписка на канал')
+  if (items.length === 0) return null
+  return (
+    <ul className={styles.rules}>
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
   )
 }
